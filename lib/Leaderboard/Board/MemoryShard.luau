@@ -738,7 +738,7 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 						task.wait(1) -- Wait 1 second between batches to avoid rate limiting / backoff being too aggressive
 					end;
 				else
-					self._logger:Log(1, `⏭️ No cleanup needed. MemoryStore key{self._boardKey}:shard{shardIndex} has {totalEntriesInShard} / {maxEntriesPerShard}) entries ({totalEntriesInShard/maxEntriesPerShard} %)`);
+					self._logger:Log(1, `⏭️ {self._boardKey}:shard{shardIndex} No cleanup needed. ({totalEntriesInShard} / {maxEntriesPerShard}) entries)`);
 				end;
 
 				return true;
@@ -756,7 +756,7 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 	end;
 
 	return Promise.all(CleanupPromises):andThen(function()
-		self._logger:Log(1, `[{self._boardKey}]: ✅ Completed cleanup for {self._shardCount} shards. Removed {TotalRemoved} entries. Current usage: {TotalEntries - TotalRemoved} / {self._maxRecords}`);
+		self._logger:Log(1, `✅ Cleaned up {self._shardCount} shards in {self._boardKey}. {TotalRemoved} entries removed. Current usage: {TotalEntries - TotalRemoved} / {self._maxRecords}`);
 		return true;
 	end):catch(function(err)
 		self._logger:Log(3, `❌ Cleanup failed for {self._boardKey} with the following error: {err}`);
