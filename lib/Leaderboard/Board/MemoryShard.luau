@@ -222,7 +222,7 @@ function MemoryShard.new(leaderboardType: LeaderboardType, boardKey: string, sha
 		end);
 
 		if (Success) then
-			self._logger:Log(1, `Created MemoryStoreSortedMap for "{ShardKey}"`);
+			self._logger:Log(1, `🪄 Created MemoryStoreSortedMap for "{ShardKey}"`);
 		else
 			self._logger:Log(1, `Failed to create MemoryStoreSortedMap for "{ShardKey}": {Response}`);
 		end;
@@ -248,7 +248,7 @@ function MemoryShard.new(leaderboardType: LeaderboardType, boardKey: string, sha
 			end;
 		end));
 
-		self._logger:Log(1, `Started cleanup thread for {boardKey} with max {self._maxEntriesPerShard} entries per shard (based on MaxRecords: {maxItems})`);
+		self._logger:Log(1, `🕑 Initialized cleanup schedule for {boardKey} with max {self._maxEntriesPerShard} entries per shard (based on MaxRecords: {maxItems})`);
 	end;
 
 	return self;
@@ -426,8 +426,6 @@ function MemoryShard:Get(topAmount, sortDirection)
 	local CombinedResults = {};
 	local ResultsToFetch = GetResultCount(self._shardCount);
 
-	self._logger:Log(1, `[{self._boardKey}]: Fetching {ResultsToFetch} records per shard (max {topAmount} total) in {self._type}`);
-
 	local function ProcessRecord(record: {key: string, value: number})
 		local IndexFound, Found = FoundInTable(CombinedResults, tonumber(record.key));
 		if (Found) then
@@ -511,15 +509,13 @@ function MemoryShard:Get(topAmount, sortDirection)
 			return a.value > b.value;
 		end);
 
-		-- Trim the results if necessary
+		-- Truncate the results if necessary
 		if (#CombinedResults > topAmount) then
-			self._logger:Log(1, `[{self._boardKey}]: Trimming results from {#CombinedResults} to {topAmount}`);
 			for i = #CombinedResults, topAmount + 1, -1 do
 				table.remove(CombinedResults, i);
 			end;
 		end;
 
-		self._logger:Log(1, `[{self._boardKey}]: Returning {#CombinedResults} records`);
 		return CombinedResults;
 	end):catch(function(err: string)
 		warn(`An error occurred while processing shards: {err}`);
@@ -738,7 +734,7 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 						task.wait(1) -- Wait 1 second between batches to avoid rate limiting / backoff being too aggressive
 					end;
 				else
-					self._logger:Log(1, `⏭️ {self._boardKey}:shard{shardIndex} No cleanup needed. ({totalEntriesInShard} / {maxEntriesPerShard}) entries)`);
+					self._logger:Log(1, `⏭️ {self._boardKey}:shard{shardIndex} No cleanup needed. ({totalEntriesInShard} / {maxEntriesPerShard} entries)`);
 				end;
 
 				return true;
@@ -756,7 +752,7 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 	end;
 
 	return Promise.all(CleanupPromises):andThen(function()
-		self._logger:Log(1, `✅ Cleaned up {self._shardCount} shards in {self._boardKey}. {TotalRemoved} entries removed. Current usage: {TotalEntries - TotalRemoved} / {self._maxRecords}`);
+		self._logger:Log(1, `✅ Cleaned up {TotalRemoved} entries across {self._shardCount} shards in {self._boardKey}. Current usage: {TotalEntries - TotalRemoved} / {self._maxRecords}`);
 		return true;
 	end):catch(function(err)
 		self._logger:Log(3, `❌ Cleanup failed for {self._boardKey} with the following error: {err}`);
