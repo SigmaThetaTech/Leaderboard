@@ -632,15 +632,13 @@ function MemoryShard:_removeKeyFromShard(shardIndex: number, key: string)
 			maxInterval = 10,
 			exponentBase = 2,
 			onSuccess = function(attempt, result)
-				if attempt > 1 then
-					self._logger:Log(1, `[Success] {key} removed from shard {shardIndex} on attempt {attempt}`)
-				end
+				self._logger:Log(1, `     🔨 [Success] {key} removed from shard {shardIndex} on attempt {attempt}`)
 			end,
 			onRetry = function(attempt, lastError, nextWaitSeconds)
-				self._logger:Log(2, `[Retry {attempt}] RemoveKeyFromShard: Retrying to remove {key} from shard {shardIndex} (attempt {attempt}) after {nextWaitSeconds}s: {lastError}`);
+				self._logger:Log(2, `     🔄 [Retry {attempt}] RemoveKeyFromShard: Retrying to remove {key} from shard {shardIndex} (attempt {attempt}) after {nextWaitSeconds}s: {lastError}`);
 			end,
 			onGiveUp = function(attempt, lastError)
-				self._logger:Log(3, `[Give Up] RemoveKeyFromShard: Failed to remove {key} from shard {shardIndex} after {attempt} attempts: {lastError}`);
+				self._logger:Log(3, `     🚫 [Give Up] RemoveKeyFromShard: Failed to remove {key} from shard {shardIndex} after {attempt} attempts: {lastError}`);
 			end,
 		});
 
@@ -722,7 +720,7 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 							break;
 						end;
 
-						self._logger:Log(1, `[Batch Remove] Will now clean up {#Batch} entries from {self._boardKey}:shard{shardIndex}`)
+						self._logger:Log(1, `💥 Will now clean up {#Batch} entries from {self._boardKey}:shard{shardIndex}`)
 
 						for _, entry in Batch do
 							-- Use pcall for each removal to handle rate limits gracefully
