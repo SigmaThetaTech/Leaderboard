@@ -205,7 +205,7 @@ function Board.new(boardKey: string, leaderboardType: LeaderboardType, rollingEx
 
 	self._boardKey = boardKey;
 	self._storeType, self._store = ConstructStore(boardKey, leaderboardType, rollingExpiry, boardConfig, debugMode);
-	self._logger = Logger.new(`Board-{boardKey}`, debugMode or false);
+	self._logger = Logger.new(`Board`, debugMode or false);
 	self._trove = Trove.new();
 	self._boardConfig = boardConfig;
 	self._maxRecords = boardConfig and boardConfig.MaxRecords or Manifest.DEFAULT_RECORD_COUNT;
@@ -388,7 +388,7 @@ function Board:Update(userId, value)
 
 	-- If we are using a MemoryStore, we can just update the data
 	if (self._storeType == "MemoryStore") then
-		self._logger:Log(1, `Successfully updated data for {userId} in "{self._boardKey}"`);
+		self._logger:Log(1, `🔄️ Successfully updated data for {userId} in "{self._boardKey}"`);
 		return self._store:Set(userId, value);
 	end;
 
@@ -426,7 +426,7 @@ function Board:Update(userId, value)
 			return reject(Result);
 		end;
 
-		self._logger:Log(1, `Successfully updated data for "{userId}" in "{self._boardKey}"`);
+		self._logger:Log(1, `✅ Successfully updated data for "{userId}" in "{self._boardKey}"`);
 		return resolve(Result);
 	end) :: Promise.TypedPromise<boolean>;
 end
