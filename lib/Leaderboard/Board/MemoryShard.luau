@@ -233,10 +233,8 @@ function MemoryShard.new(leaderboardType: LeaderboardType, boardKey: string, sha
 	-- Start periodic cleanup thread
 	if (not OFFLINE_ENVIRONMENT) then
 		self._trove:Add(task.spawn(function()
-			task.wait(60) -- Wait 60 seconds before starting cleanup to let boards initialize
 			while (true) do
 				task.wait(SHARD_CLEANUP_SETTINGS.CLEANUP_INTERVAL);
-
 				-- Use pcall to handle cleanup failures gracefully (rate limits, etc.)
 				-- Other servers will also help clean up over time
 				local success, err = pcall(function()
@@ -625,28 +623,28 @@ end
 ]=]
 function MemoryShard:_removeKeyFromShard(shardIndex: number, key: string)
 	return Promise.new(function(resolve, reject)
-		local Success, Result = Backoff.exponentialAsync(pcall(function()
+		local Success, Result = Backoff.exponentialAsync(function()
 			local Shard = self._shards[shardIndex];
 			if (not Shard) then
 				return reject("Shard not found");
 			end;
 
-			return Shard:RemoveAsync(key);
-		end), {
+			return true, Shard:RemoveAsync(key);
+		end, {
 			maxRetries = 3,
 			minInterval = 2,
 			maxInterval = 10,
 			exponentBase = 2,
 			onSuccess = function(attempt, result)
 				if attempt > 1 then
-					self._logger:Log(1, `RemoveKeyFromShard: GetRangeAsync success on attempt {attempt} for shard {shardIndex}`)
+					self._logger:Log(1, `[Success] {key} removed from shard {shardIndex} on attempt {attempt}`)
 				end
 			end,
 			onRetry = function(attempt, lastError, nextWaitSeconds)
-				self._logger:Log(2, `RemoveKeyFromShard: Retrying GetRangeAsync for shard {shardIndex} (attempt {attempt}) after {nextWaitSeconds}s: {lastError}`);
+				self._logger:Log(2, `[Retry {attempt}] RemoveKeyFromShard: Retrying to remove {key} from shard {shardIndex} (attempt {attempt}) after {nextWaitSeconds}s: {lastError}`);
 			end,
 			onGiveUp = function(attempt, lastError)
-				self._logger:Log(3, `RemoveKeyFromShard: Failed to get data from shard {shardIndex} after {attempt} attempts: {lastError}`);
+				self._logger:Log(3, `[Give Up] RemoveKeyFromShard: Failed to remove {key} from shard {shardIndex} after {attempt} attempts: {lastError}`);
 			end,
 		});
 
@@ -670,19 +668,22 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 	maxEntriesPerShard = maxEntriesPerShard or 1000; -- Default limit per shard
 
 	local CleanupPromises = {};
+	local TotalRemoved = 0;
+	local TotalEntries = 0;
 
 	for shardIndex, shard in self._shards do
 		if (not shard) then continue; end;
 
 		local CleanupPromise = Promise.new(function(resolve, reject)
 			local Success, Result = pcall(function()
-				local TotalEntries = self:_getShardSize(shardIndex);
+				local totalEntriesInShard = self:_getShardSize(shardIndex);
+				TotalEntries += totalEntriesInShard;
 
 				-- Only cleanup if we significantly exceed the limit
 				local BaseCleanupThreshold = 50;
-				if (TotalEntries > maxEntriesPerShard and TotalEntries > BaseCleanupThreshold) then
-					local ExcessCount = TotalEntries - maxEntriesPerShard;
-					self._logger:Log(1, `[{self._boardKey}]: Shard {shardIndex} has {TotalEntries} entries, removing {ExcessCount} lowest entries`);
+				if (totalEntriesInShard > maxEntriesPerShard and totalEntriesInShard > BaseCleanupThreshold) then
+					local ExcessCount = totalEntriesInShard - maxEntriesPerShard;
+					self._logger:Log(1, `[{self._boardKey}]: Shard {shardIndex} has {totalEntriesInShard} entries, removing {ExcessCount} lowest entries`);
 
 					-- Remove entries in batches (GetRangeAsync max is 200)
 					local RemovedCount = 0;
@@ -690,60 +691,61 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 
 					while (RemovedCount < ExcessCount) do
 						local CurrentBatchSize = math.min(BatchSize, ExcessCount - RemovedCount);
-
 						-- Get the lowest-scoring entries (ascending order)
-						local Success, LowEntries = Backoff.exponentialAsync(pcall(function()-- Backoff yields and will offset the while loop to find rhythm with rate limits
-							return shard:GetRangeAsync(Enum.SortDirection.Ascending, CurrentBatchSize);
-						end), {
+						local Success, Batch = Backoff.exponentialAsync(function()-- Backoff yields and will offset the while loop to find rhythm with rate limits
+							local result = shard:GetRangeAsync(Enum.SortDirection.Ascending, CurrentBatchSize);
+							return true, result;
+						end, {
 							maxRetries = 3,
 							minInterval = 2,
 							maxInterval = 10,
 							exponentBase = 2,
 							onSuccess = function(attempt, result)
 								if attempt > 1 then
-									self._logger:Log(1, `Cleanup: GetRangeAsync success on attempt {attempt} for shard {shardIndex}`)
+									self._logger:Log(1, `[Success {attempt}] Cleanup: GetRangeAsync success for {self._boardKey} shard {shardIndex}. Got {#result} entries`)
 								end
 							end,
 							onRetry = function(attempt, lastError, nextWaitSeconds)
-								self._logger:Log(2, `Cleanup: Retrying GetRangeAsync for shard {shardIndex} (attempt {attempt}) after {nextWaitSeconds}s: {lastError}`);
+								self._logger:Log(2, `[Retry {attempt}] Cleanup: Retrying GetRangeAsync for shard {shardIndex} (attempt {attempt}) after {nextWaitSeconds}s: {lastError}`);
 							end,
 							onGiveUp = function(attempt, lastError)
 								reject(lastError)
-								self._logger:Log(3, `Cleanup: Failed to get data from shard {shardIndex} after {attempt} attempts: {lastError}`);
+								self._logger:Log(3, `[Give Up] Cleanup: Failed to get data from shard {shardIndex} after {attempt} attempts: {lastError}`);
 							end,
 						});
 
 						if (not Success) then
-							return reject(LowEntries);
+							return reject(Batch);
 						end;
 
-						for _, entry in LowEntries do
+						-- Break if no more batches to remove
+						if (#Batch == 0) then
+							self._logger:Log(1, `🧹 Cleanup completed for MemoryStore key {self._boardKey}:shard{shardIndex}; removed {RemovedCount} entries. Current usage: {totalEntriesInShard} / {maxEntriesPerShard}`);
+							break;
+						end;
+
+						self._logger:Log(1, `[Batch Remove] Will now clean up {#Batch} entries from {self._boardKey}:shard{shardIndex}`)
+
+						for _, entry in Batch do
 							-- Use pcall for each removal to handle rate limits gracefully
 							-- Failures are okay, other servers will help clean up
-							pcall(function()
-								self:_removeKeyFromShard(shardIndex, entry.key):await();
-							end);
-							RemovedCount += 1;
+							self:_removeKeyFromShard(shardIndex, entry.key):await();
+							RemovedCount += 1; 
+							TotalRemoved += 1;
 							task.wait(0.5) -- Wait 0.5 seconds between removals to avoid rate limiting / backoff being too aggressive
-						end;
-
-						if (#LowEntries == 0) then
-							break;
 						end;
 
 						task.wait(1) -- Wait 1 second between batches to avoid rate limiting / backoff being too aggressive
 					end;
-
-					self._logger:Log(1, `[{self._boardKey}]: Cleaned up shard {shardIndex}, removed {RemovedCount} entries`);
 				else
-					self._logger:Log(1, `[{self._boardKey}]: Shard {shardIndex} has {TotalEntries} entries (within limit of {maxEntriesPerShard})`);
+					self._logger:Log(1, `⏭️ No cleanup needed. MemoryStore key{self._boardKey}:shard{shardIndex} has {totalEntriesInShard} / {maxEntriesPerShard}) entries ({totalEntriesInShard/maxEntriesPerShard} %)`);
 				end;
 
 				return true;
 			end);
 
 			if (not Success) then
-				self._logger:Log(3, `[{self._boardKey}]: Failed to cleanup shard {shardIndex}: {Result}`);
+				self._logger:Log(3, `❌ Failed to cleanup {self._boardKey}:shard{shardIndex} with the following error: {Result}`);
 				return reject(Result);
 			end;
 
@@ -754,10 +756,10 @@ function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 	end;
 
 	return Promise.all(CleanupPromises):andThen(function()
-		self._logger:Log(1, `[{self._boardKey}]: Completed cleanup for all shards`);
+		self._logger:Log(1, `[{self._boardKey}]: ✅ Completed cleanup for {self._shardCount} shards. Removed {TotalRemoved} entries. Current usage: {TotalEntries - TotalRemoved} / {self._maxRecords}`);
 		return true;
 	end):catch(function(err)
-		self._logger:Log(3, `[{self._boardKey}]: Cleanup failed: {err}`);
+		self._logger:Log(3, `❌ Cleanup failed for {self._boardKey} with the following error: {err}`);
 		return false;
 	end);
 end
