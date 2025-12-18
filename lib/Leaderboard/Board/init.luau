@@ -246,7 +246,7 @@ function Board.new(boardKey: string, leaderboardType: LeaderboardType, rollingEx
 			end;
 		end));
 		
-		self._logger:Log(1, `Started OrderedDataStore cleanup thread for {boardKey} with max {self._maxRecords} records`);
+		self._logger:Log(1, `🕑 Initialized cleanup schedule for {boardKey} with max {self._maxRecords} records`);
 	end;
 
 	return self;
@@ -388,7 +388,7 @@ function Board:Update(userId, value)
 
 	-- If we are using a MemoryStore, we can just update the data
 	if (self._storeType == "MemoryStore") then
-		self._logger:Log(1, `🔄️ Successfully updated data for {userId} in "{self._boardKey}"`);
+		self._logger:Log(1, `📤 Successfully updated leaderboard data for {userId} in "{self._boardKey}"`);
 		return self._store:Set(userId, value);
 	end;
 
@@ -426,7 +426,7 @@ function Board:Update(userId, value)
 			return reject(Result);
 		end;
 
-		self._logger:Log(1, `✅ Successfully updated data for "{userId}" in "{self._boardKey}"`);
+		self._logger:Log(1, `📤 Successfully updated leaderboard data for "{userId}" in "{self._boardKey}"`);
 		return resolve(Result);
 	end) :: Promise.TypedPromise<boolean>;
 end

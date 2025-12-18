@@ -663,6 +663,8 @@ end
 function MemoryShard:_cleanupShards(maxEntriesPerShard: number?)
 	maxEntriesPerShard = maxEntriesPerShard or 1000; -- Default limit per shard
 
+	self._logger:Log(1, `🧹 Starting cleanup for {self._boardKey} with max {maxEntriesPerShard} entries per shard across {self._shardCount} shards ({self._maxRecords} total)`);
+
 	local CleanupPromises = {};
 	local TotalRemoved = 0;
 	local TotalEntries = 0;
